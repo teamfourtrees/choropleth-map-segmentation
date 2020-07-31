@@ -1,0 +1,6 @@
+# exclude all files inside the input directory when making commits except .keep (which preserves the folder)
+input/*
+!input/.keep
+
+# exclude the entire output directory when making commits
+output/

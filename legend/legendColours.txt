@@ -1,0 +1,42 @@
+mature timber.png
+    colour = green
+    HSV = [41 167 143]
+    RGB = [107 143 49]
+    GRAY = 99
+
+immature timber.png
+    colour = dark yellow
+    HSV = [26 217 206]
+    RGB = [206 187 30]
+    GRAY = 141
+
+not restocked.png
+    colour = light yellow
+    HSV = [25 229 237]
+    RGB = [237 202 23]
+    GRAY = 154
+
+non-commercial stands.png
+    colour = dark blue
+    HSV = [89 92 154]
+    RGB = [98 153 151]
+    GRAY = 134
+
+non-forested land.png
+    colour = off-white
+    HSV = [18 51 240]
+    RGB = [240 221 191]
+    GRAY = 217
+
+water.png
+    colour = light blue
+    HSV = [27 34 203]
+    RGB = [203 200 175]
+    GRAY = 192
+
+boundary.png
+    colour = dark grey
+    HSV = [16 52 77]
+    RGB = [77 70 61]
+    GRAY = 69
+
