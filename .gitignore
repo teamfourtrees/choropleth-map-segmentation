@@ -1,6 +1,14 @@
-# exclude all files inside the input directory when making commits except .keep (which preserves the folder)
+# define a list of files and folders to exclude from the repository and ignore when committing files
+
+# exclude all files inside the input directory except .keep (which preserves the folder structure)
 input/*
 !input/.keep
 
-# exclude the entire output directory when making commits
+# exclude the entire output directory
 output/
+
+# exclude macOS DS_Store files from all subdirectories
+**/.DS_Store
+
+# exclude python cache files
+source/__pycache__/

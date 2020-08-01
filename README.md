@@ -16,4 +16,4 @@
 
 5. Copy the geoTIFFs to the 'input' folder
 
-6. 
+TODO: Finalize procedure

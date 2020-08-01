@@ -1,25 +1,19 @@
-# from https://github.com/sgillies/rasterio/blob/master/examples/rasterio_polygonize.py
-
 # Emulates GDAL's gdal_polygonize.py
+# from https://github.com/sgillies/rasterio/blob/master/examples/rasterio_polygonize.py
 
 import argparse
 import logging
 import subprocess
 import sys
-
 import fiona
 import rasterio
 from rasterio.features import shapes
 
-
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 logger = logging.getLogger('rasterio_polygonize')
 
-
 def main(raster_file, vector_file, driver, mask_value):
-
     with rasterio.Env():
-
         with rasterio.open(raster_file) as src:
             image = src.read(1)
 
@@ -45,7 +39,6 @@ def main(raster_file, vector_file, driver, mask_value):
     return dst.name
 
 if __name__ == '__main__':
-
     parser = argparse.ArgumentParser(
         description="Writes shapes of raster features to a vector file")
     parser.add_argument(
