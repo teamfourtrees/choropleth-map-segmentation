@@ -11,9 +11,12 @@ from PIL import Image
 from PIL import ImageFilter
 from scipy import stats
 import datetime
+import fiona
+
 # import rasterio with warnings disabled to suppress the following warning:
 # FutureWarning: GDAL-style transforms are deprecated and will not be supported in Rasterio 1.0
 import rasterio
+from rasterio.features import shapes
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
@@ -137,7 +140,7 @@ def saveImageTiff(imageArray,profile,destinationFolder,fileName):
 ################################################################################
 
 # plot the pixel distribution of the segmented image in the RGB colour space
-def createSegmentedImageScatterPlot(inputImage,labelsImage,k,centers):
+def createSegmentedImageScatterPlot(inputImage,labelsImage,k,centers,processingFolder):
     # configure 3D plot format
     figure = plt.figure()
     axes = figure.add_subplot(111, projection='3d')
@@ -188,7 +191,7 @@ def createSegmentedImageScatterPlot(inputImage,labelsImage,k,centers):
 ################################################################################
 
 # plot the pixel distribution of an RGB image in the HSV colour space
-def createHsvImageScatterPlot(imageRGB):
+def createHsvImageScatterPlot(imageRGB,processingFolder):
     # get pixel colors for plotting
     pixelColours = imageRGB.reshape((np.shape(imageRGB)[0]*np.shape(imageRGB)[1], 3))
     norm = colors.Normalize(vmin=-1.,vmax=1.)
@@ -235,7 +238,7 @@ def createHsvImageScatterPlot(imageRGB):
 # sharpens the image to enhance edges and boundaries between map colours
 def sharpenImage(imageArray):
     # from https://stackoverflow.com/questions/32454613/python-unsharp-mask
-    imageBlur = cv2.GaussianBlur(imageCropRGBCopy, (9,9), 0)
+    imageBlur = cv2.GaussianBlur(imageArray, (9,9), 0)
     imageUnsharp = cv2.addWeighted(imageArray, 1.5, imageBlur, -0.5, 0, imageArray)
 
     return imageUnsharp
@@ -243,7 +246,7 @@ def sharpenImage(imageArray):
 ################################################################################
 
 # requests user input for a threshold value (to demarcate the boundary between dark and non-dark pixels)
-def getBlackThresholdFromUser(image,plotTitle,initialThreshold,nbins):
+def getBlackThresholdFromUser(image,plotTitle,initialThreshold,nbins,processingFolder):
     threshold = initialThreshold # start with default value
     userInputThresh = "n"
     while userInputThresh != "y": # until user says yes to continue
@@ -434,7 +437,7 @@ def createRGBImageFromLabels(labels,centers):
 ################################################################################
 
 # save each masked section of the segmented image separately
-def saveImageSegments(segmentedImageRGB, labelsImage, labelColors, k, backgroundColor, fileNames=None):
+def saveImageSegments(segmentedImageRGB, labelsImage, labelColors, k, backgroundColor, profile, processingFolder,segmentsFolder,fileNames=None):
     counter = 0 # counter to count number of segments saved
     for x in range(0,k):
         mask = np.copy(segmentedImageRGB)
@@ -459,7 +462,7 @@ def saveImageSegments(segmentedImageRGB, labelsImage, labelColors, k, background
 ################################################################################
 
 # read all images in the output > [image title] > segmentsFolder and convert them to shapefiles
-def createShapeFiles():
+def createShapeFiles(shapeFileFolder,segmentsFolder):
     # create shape file output folder
     if not os.path.exists(shapeFileFolder):
         os.makedirs(shapeFileFolder)
@@ -480,7 +483,37 @@ def createShapeFiles():
         mask_value = None
 
         # polygonize the raster and vector files
-        rasterio_polygonize.main(raster_file, vector_file, driver, mask_value)
+        polygonize(raster_file, vector_file, driver, mask_value)
+
+################################################################################
+
+# Emulates GDAL's gdal_polygonize.py
+# from https://github.com/sgillies/rasterio/blob/master/examples/rasterio_polygonize.py
+def polygonize(raster_file, vector_file, driver, mask_value):
+    with rasterio.Env():
+        with rasterio.open(raster_file) as src:
+            image = src.read(1)
+
+        if mask_value is not None:
+            mask = image == mask_value
+        else:
+            mask = None
+
+        results = (
+            {'properties': {'raster_val': v}, 'geometry': s}
+            for i, (s, v)
+            in enumerate(
+                shapes(image, mask=mask, transform=src.transform)))
+
+        with fiona.open(
+                vector_file, 'w',
+                driver=driver,
+                crs=src.crs,
+                schema={'properties': [('raster_val', 'int')],
+                        'geometry': 'Polygon'}) as dst:
+            dst.writerecords(results)
+
+    return dst.name
 
 ################################################################################
 
@@ -504,12 +537,21 @@ def saveProcessingStep(imageArray,destinationFolder,fileName):
 ################################################################################
 
 # prints information to a log file for the user's reference
-def printToLog(text):
+def printToLog(imageFolder,text):
     filePath = imageFolder + os.path.sep + 'log.txt'
     with open(filePath,"a+") as f:
         f.write(text+"\n")
 
 ################################################################################
+
+def getRootFolder():
+    # get the directory of this python script file on a local machine
+    from pathlib import Path
+    dirPath = Path(__file__).resolve().parent
+
+    # go up one folder from source file using string split and set as root folder
+    root,tail = os.path.split(dirPath)
+    return root
 
 # informs the user of the current processing state
 def printProcess(fileName):
@@ -518,7 +560,7 @@ def printProcess(fileName):
 ################################################################################
 
 # the entire k-means clustering image segmentation process
-def kmeansSegmentationProcess(inputImage):
+def kmeansSegmentationProcess(inputImage,profile,imageFolder,processingFolder,segmentsFolder,shapeFileFolder):
 
     #-----#    sharpen image    #-----#
     fileName = "Sharpened RGB Image"
@@ -537,9 +579,9 @@ def kmeansSegmentationProcess(inputImage):
     printProcess(plotTitle)
     nbins = 256
     initialThreshold = 80
-    threshold = getBlackThresholdFromUser(imageGray,plotTitle,initialThreshold,nbins)
+    threshold = getBlackThresholdFromUser(imageGray,plotTitle,initialThreshold,nbins,processingFolder)
 
-    printToLog("threshold: " + str(threshold))
+    printToLog(imageFolder,"threshold: " + str(threshold))
 
     # let user select 'k' value
     print("\nA 'k' value is needed to segment the image into 'k' clusters. The number of peaks shown in the histogram can be used as an estimate of this value.")
@@ -552,7 +594,7 @@ def kmeansSegmentationProcess(inputImage):
     print("")
     # close histogram plot
     plt.close()
-    printToLog("k-value: " + str(k))
+    printToLog(imageFolder,"k-value: " + str(k))
 
     #-----#    save the binary image    #-----#
     # classify pixels as either above threshold (white, value: 1) or below (black, value: 0)
@@ -568,10 +610,10 @@ def kmeansSegmentationProcess(inputImage):
     fileName = "Modified RGB Image with True Black Pixels"
     printProcess(fileName)
 
-    # extract the channels from the cropped image
-    imageCropR = imageCropRGBCopy[:,:,0]
-    imageCropG = imageCropRGBCopy[:,:,1]
-    imageCropB = imageCropRGBCopy[:,:,2]
+    # extract the channels from the input image
+    imageCropR = inputImage[:,:,0]
+    imageCropG = inputImage[:,:,1]
+    imageCropB = inputImage[:,:,2]
 
     # use binary image to set dark pixels to be true black
     imageCropR[imageBW==0]=0
@@ -579,7 +621,7 @@ def kmeansSegmentationProcess(inputImage):
     imageCropB[imageBW==0]=0
 
     # recombine modified channels into a single RGB image
-    imageCropMod = imageCropRGBCopy
+    imageCropMod = inputImage
     imageCropMod[:,:,0]=imageCropR
     imageCropMod[:,:,1]=imageCropG
     imageCropMod[:,:,2]=imageCropB
@@ -619,7 +661,7 @@ def kmeansSegmentationProcess(inputImage):
 
     plotTitle = "Scatter Plot - RGB Image Pixel Intensities with Colour Labels"
     printProcess(plotTitle)
-    createSegmentedImageScatterPlot(imageCropRGB,labelsImage,k,centers)
+    createSegmentedImageScatterPlot(inputImage,labelsImage,k,centers,processingFolder)
 
     #-----#    remove black pixels from the segmented image    #-----#
     fileName = "RGB Image with Black Pixels Removed"
@@ -642,16 +684,16 @@ def kmeansSegmentationProcess(inputImage):
     fileName = "Image Segments"
     printProcess(fileName)
     backgroundColor = [0,0,0] # white background
-    saveImageSegments(imageRGBNoBlackDenoised,denoisedLabels,centers,k,backgroundColor,'none')
+    saveImageSegments(imageRGBNoBlackDenoised,denoisedLabels,centers,k,backgroundColor,profile,processingFolder,segmentsFolder,'none')
 
     #-----#    create shape files    #-----#
     fileName = "Shape files"
     printProcess(fileName)
-    createShapeFiles()
+    createShapeFiles(shapeFileFolder,segmentsFolder)
 
 ################################################################################
 
-def hsvSegmentationProcess(inputImage):
+def hsvSegmentationProcess(inputImage,profile,imageFolder,processingFolder,segmentsFolder,shapeFileFolder):
     # see https://scikit-image.org/docs/stable/auto_examples/segmentation/plot_multiotsu.html
     # for example on multithresholding
 
@@ -678,7 +720,7 @@ def hsvSegmentationProcess(inputImage):
 
     stepName = "Scatter Plot - HSV Pixel Intensities with RGB Colour Labels"
     printProcess(stepName)
-    createHsvImageScatterPlot(inputImage)
+    createHsvImageScatterPlot(inputImage,processingFolder)
 
     #-----#    show Value image    #-----#
     fileName = "Value Image"
@@ -700,11 +742,10 @@ def hsvSegmentationProcess(inputImage):
     plt.xlabel("Pixel Intensity")
     plt.ylabel("Number of Pixels")
     plt.xlim(0,nbins-1)
-    plt.show(block=False)
     plt.savefig(processingFolder + os.path.sep + plotTitle + ".png")
     plt.close()
 
-    printToLog("threshold: " + str(threshold))
+    printToLog(imageFolder,"threshold: " + str(threshold))
 
     #-----#    save the binary image    #-----#
     # classify pixels as either above threshold (white, value: 1) or below (black, value: 0)
@@ -751,8 +792,8 @@ def hsvSegmentationProcess(inputImage):
         matureTimberUBound,
         matureTimberRGB,
         matureTimberStr)
-    printToLog(matureTimberStr + " LB: {0}".format(matureTimberLBound))
-    printToLog(matureTimberStr + " UB: {0}".format(matureTimberUBound))
+    printToLog(imageFolder,matureTimberStr + " LB: {0}".format(matureTimberLBound))
+    printToLog(imageFolder,matureTimberStr + " UB: {0}".format(matureTimberUBound))
 
     immatureTimberLBound = (22, 101, threshold)
     immatureTimberUBound = (34, 255, 220)
@@ -761,8 +802,8 @@ def hsvSegmentationProcess(inputImage):
         immatureTimberUBound,
         immatureTimberRGB,
         immatureTimberStr)
-    printToLog(immatureTimberStr + " LB: {0}".format(immatureTimberLBound))
-    printToLog(immatureTimberStr + " UB: {0}".format(immatureTimberUBound))
+    printToLog(imageFolder,immatureTimberStr + " LB: {0}".format(immatureTimberLBound))
+    printToLog(imageFolder,immatureTimberStr + " UB: {0}".format(immatureTimberUBound))
 
     notRestockedLBound = (22, 101, 225)
     notRestockedUBound = (34, 255, 255)
@@ -771,8 +812,8 @@ def hsvSegmentationProcess(inputImage):
         notRestockedUBound,
         notRestockedRGB,
         notRestockedStr)
-    printToLog(notRestockedStr + " LB: {0}".format(notRestockedLBound))
-    printToLog(notRestockedStr + " UB: {0}".format(notRestockedUBound))
+    printToLog(imageFolder,notRestockedStr + " LB: {0}".format(notRestockedLBound))
+    printToLog(imageFolder,notRestockedStr + " UB: {0}".format(notRestockedUBound))
 
     nonCommercialStandsLBound = (83, 101, threshold)
     nonCommercialStandsUBound = (120, 255, 255)
@@ -781,8 +822,8 @@ def hsvSegmentationProcess(inputImage):
         nonCommercialStandsUBound,
         nonCommercialStandsRGB,
         nonCommercialStandsStr)
-    printToLog(nonCommercialStandsStr + " LB: {0}".format(nonCommercialStandsLBound))
-    printToLog(nonCommercialStandsStr + " UB: {0}".format(nonCommercialStandsUBound))
+    printToLog(imageFolder,nonCommercialStandsStr + " LB: {0}".format(nonCommercialStandsLBound))
+    printToLog(imageFolder,nonCommercialStandsStr + " UB: {0}".format(nonCommercialStandsUBound))
 
     nonForestedLandLBound = (10, 0, threshold)
     nonForestedLandUBound = (28, 95, 255)
@@ -791,8 +832,8 @@ def hsvSegmentationProcess(inputImage):
         nonForestedLandUBound,
         nonForestedLandRGB,
         nonForestedLandStr)
-    printToLog(nonForestedLandStr + " LB: {0}".format(nonForestedLandLBound))
-    printToLog(nonForestedLandStr + " UB: {0}".format(nonForestedLandUBound))
+    printToLog(imageFolder,nonForestedLandStr + " LB: {0}".format(nonForestedLandLBound))
+    printToLog(imageFolder,nonForestedLandStr + " UB: {0}".format(nonForestedLandUBound))
 
     waterLBound = (30, 0, threshold)
     waterUBound = (90, 90, 255)
@@ -801,8 +842,8 @@ def hsvSegmentationProcess(inputImage):
         waterUBound,
         waterRGB,
         waterStr)
-    printToLog(waterStr + " LB: {0}".format(waterLBound))
-    printToLog(waterStr + " UB: {0}".format(waterUBound))
+    printToLog(imageFolder,waterStr + " LB: {0}".format(waterLBound))
+    printToLog(imageFolder,waterStr + " UB: {0}".format(waterUBound))
 
     imageSegmented = seg1 + seg2 + seg3 + seg4 + seg5 + seg6
     saveProcessingStep(imageSegmented,processingFolder,fileName)
@@ -853,93 +894,24 @@ def hsvSegmentationProcess(inputImage):
     fileName = "Image Segments"
     printProcess(fileName)
     backgroundColor = [0,0,0] # white background
-    saveImageSegments(imageRGBNoBlackDenoised,denoisedLabels,centers,numSegments,backgroundColor,classNames)
+    saveImageSegments(imageRGBNoBlackDenoised,denoisedLabels,centers,numSegments,backgroundColor,profile,processingFolder,segmentsFolder,classNames)
 
     #-----#    create shape files    #-----#
     fileName = "Shape files"
     printProcess(fileName)
-    createShapeFiles()
+    createShapeFiles(shapeFileFolder,segmentsFolder)
 
-################################################################################
+def processImage(imageDirectory,imageFileNameWithExtension,includeUserInput=False,cropSize=None):
 
-print("\nDigital Resurrection of Historical Maps using Artificial Intelligence (DRHMAI) Project")
-print("Team FourTrees, Camosun College ICS Capstone 2020\n")
-
-# get the directory of this python script file on a local machine
-dirPath = os.path.dirname(os.path.realpath(__file__))
-
-# go up one folder from source file using string split and set as root folder
-root,tail = os.path.split(dirPath)
-
-outputFolder = root + os.path.sep + "output"
-
-# set source file location for the python module
-modulePath = root + os.path.sep + "source"
-
-# add the polygonize module path to the python system path so that it can be accessed for import
-sys.path.insert(1, modulePath)
-import rasterio_polygonize
-
-# get list of all input images to process
-imageDirectory = root + os.path.sep + "input"
-print("Looking for TIFF images in:\n    ",imageDirectory)
-
-fileList = sorted(os.listdir(imageDirectory))
-imageList = []
-for x in range(0,len(fileList)):
-    f = fileList[x]
-    # get tiffs/geotiffs only
-    if f.endswith('.tif') or f.endswith('.tiff') or f.endswith('.gtif') or f.endswith('.gtiff') or f.endswith('.TIF') or f.endswith('.TIFF') or f.endswith('.GTIF') or f.endswith('.GTIFF'):
-        imageList.append(f)
-# sort list
-imageList = sorted(imageList)
-
-if len(imageList) == 0:
-    print("No TIFF images were found. Please add files and try again.")
-    print("Exiting program.\n")
-    exit()
-
-print("The following images were found:\n")
-
-for x in range(0,len(imageList)):
-    print("    ", x+1, ": ", imageList[x])
-numImagesInList = len(imageList)
-
-# get image number as input from user and convert to 0-based integer
-imageNumberString = input("\nTo process a single image, enter the number of the image.\nTo process all images enter '0'.\n")
-
-# ensure that the input number is valid
-while imageNumberString.isnumeric() == False or int(imageNumberString) > numImagesInList or int(imageNumberString) < 0:
-    imageNumberString = input("\nThat is not a valid image number. Try again.\n")
-
-imageNumber = int(imageNumberString)
-
-if imageNumber == 0:
-    processOneFileOnly = False
-    imageStartIndex = 0
-    imageFinishIndex = numImagesInList
-else:
-    processOneFileOnly = True
-    imageStartIndex = imageNumber - 1
-    imageFinishIndex = imageNumber
-
-# process each image in sequence
-for x in range(imageStartIndex,imageFinishIndex):
-
-    # reset counter used for saving processing step images
-    saveProcessingStep.counter = 0
-
-    # get image name and print
-    imageFileNameWithExtension = imageList[x]
-    temp = imageFileNameWithExtension.split(".")
-    imageFileNameNoExtension = temp[0]
-    imageFilePath = imageDirectory + os.path.sep + imageFileNameWithExtension
     print("\nReading File: ",imageFileNameWithExtension)
+    imageFileNameNoExtension = os.path.splitext(imageFileNameWithExtension)[0]
 
     #-----#    read input image and set up directories for output storage   #-----#
+    imageFilePath = imageDirectory + os.path.sep + imageFileNameWithExtension
     imageRGB,profile = readGeoTiff(imageFilePath)
 
     # create image-specific folder directories to store processing and output images
+    outputFolder = getRootFolder() + os.path.sep + "output"
     imageFolder = outputFolder + os.path.sep + imageFileNameNoExtension
     processingFolder = imageFolder + os.path.sep + "processing"
     shapeFileFolder = imageFolder + os.path.sep + "shapefiles"
@@ -950,26 +922,31 @@ for x in range(imageStartIndex,imageFinishIndex):
         shutil.rmtree(imageFolder)
     os.makedirs(imageFolder)
 
-    printToLog("input image: " + str(imageFileNameWithExtension))
-    printToLog("process start: " + str(datetime.datetime.now()))
+    printToLog(imageFolder,"input image: " + str(imageFileNameWithExtension))
+    printToLog(imageFolder,"process start: " + str(datetime.datetime.now()))
 
     #-----#    crop image    #-----#
     imageShape = imageRGB.shape
     height = imageShape[0]
     width = imageShape[1]
 
-    printToLog("image height: "+ str(height))
-    printToLog("image width: " + str(width))
+    printToLog(imageFolder,"image height: "+ str(height))
+    printToLog(imageFolder,"image width: " + str(width))
 
     # assume crop at full size unless overriden by user input
-    cropWidth = width
-    cropHeight = height
-    cropFileName = "Input Image"
-    #cropWidth = 2000
-    #cropHeight = 2000
+    if cropSize==None:
+        cropWidth = width
+        cropHeight = height
+        cropFileName = "Input Image"
+    else:
+        maxCropSize = min((height,width))
+        assert(cropSize <= maxCropSize and cropSize > 0)
+        cropWidth = cropSize
+        cropHeight = cropSize
+        cropFileName = "Cropped Image"
 
     # get cropping dimensions from user if only processing one file
-    if processOneFileOnly == True:
+    if includeUserInput == True:
         print("\nImage",imageFileNameNoExtension, "is", height,"by",width, "pixels in size and may require long processing times. Would you like to crop it before processing?")
         userInputCrop = input("Enter 'n' to continue without cropping OR enter an integer value to crop the image to a square:\n")
 
@@ -992,12 +969,12 @@ for x in range(imageStartIndex,imageFinishIndex):
 
         print("")
 
-    printToLog("crop height: "+ str(cropHeight))
-    printToLog("crop width: " + str(cropWidth))
+    printToLog(imageFolder,"crop height: "+ str(cropHeight))
+    printToLog(imageFolder,"crop width: " + str(cropWidth))
 
     # assume that method 2 will be used (HSV segmentation)
     methodNum = 2
-    if processOneFileOnly == True:
+    if includeUserInput == True:
         # ask user to choose segmentation method
         print("Select segmentation method:")
         print("     1 :  gray-level thresholding with k-means segmentation")
@@ -1019,14 +996,83 @@ for x in range(imageStartIndex,imageFinishIndex):
 
     #-----#    begin segmentation process based on user selection    #-----#
     if methodNum == 1:
-        printToLog("segmentation method: k-means")
-        kmeansSegmentationProcess(imageCropRGBCopy)
+        printToLog(imageFolder,"segmentation method: k-means")
+        kmeansSegmentationProcess(imageCropRGBCopy,profile,imageFolder,processingFolder,segmentsFolder,shapeFileFolder)
 
     elif methodNum == 2:# start segmentation process
-        printToLog("segmentation method: HSV")
-        hsvSegmentationProcess(imageCropRGBCopy)
+        printToLog(imageFolder,"segmentation method: HSV")
+        hsvSegmentationProcess(imageCropRGBCopy,profile,imageFolder,processingFolder,segmentsFolder,shapeFileFolder)
 
     print("Finished segmenting " + imageFileNameNoExtension + "!")
     print("All output files have been saved to:\n    ",imageFolder)
 
-    printToLog("process end: " + str(datetime.datetime.now()))
+    printToLog(imageFolder,"process end: " + str(datetime.datetime.now()))
+
+################################################################################
+
+def run():
+    print("\nDigital Resurrection of Historical Maps using Artificial Intelligence (DRHMAI) Project")
+    print("Team FourTrees, Camosun College ICS Capstone 2020\n")
+
+    print("Welcome to the Choropleth Map Segmentation Tool!\n")
+
+    root = getRootFolder()
+    # get list of all input images to process
+    imageDirectory = root + os.path.sep + "input"
+    print("Looking for TIFF images in:\n    ",imageDirectory)
+
+    fileList = sorted(os.listdir(imageDirectory))
+    imageList = []
+    for x in range(0,len(fileList)):
+        f = fileList[x]
+        # get tiffs/geotiffs only
+        if f.endswith('.tif') or f.endswith('.tiff') or f.endswith('.gtif') or f.endswith('.gtiff') or f.endswith('.TIF') or f.endswith('.TIFF') or f.endswith('.GTIF') or f.endswith('.GTIFF'):
+            imageList.append(f)
+    # sort list
+    imageList = sorted(imageList)
+
+    # exit program if no images are found
+    if len(imageList) == 0:
+        print("No TIFF images were found. Please add files and try again.")
+        print("Exiting program.\n")
+        exit()
+
+    print("The following images were found:\n")
+
+    # display names of all images in folder
+    for x in range(0,len(imageList)):
+        print("    ", x+1, ": ", imageList[x])
+    numImagesInList = len(imageList)
+
+    # get image number as input from user and convert to 0-based integer
+    imageNumberString = input("\nTo process a single image, enter the number of the image.\nTo process all images enter '0'.\n")
+
+    # ensure that the input number is valid
+    while imageNumberString.isnumeric() == False or int(imageNumberString) > numImagesInList or int(imageNumberString) < 0:
+        imageNumberString = input("\nThat is not a valid image number. Try again.\n")
+
+    imageNumber = int(imageNumberString)
+
+    if imageNumber == 0:
+        includeUserInput = False
+        imageStartIndex = 0
+        imageFinishIndex = numImagesInList
+    else:
+        includeUserInput = True
+        imageStartIndex = imageNumber - 1
+        imageFinishIndex = imageNumber
+
+    # process each image in sequence
+    for x in range(imageStartIndex,imageFinishIndex):
+
+        # reset counter used for saving processing step images
+        saveProcessingStep.counter = 0
+
+        # get image name and print
+        imageFileNameWithExtension = imageList[x]
+
+        processImage(imageDirectory,imageFileNameWithExtension,includeUserInput)
+
+# allow functions to be executed directly from command line
+if __name__ == '__main__':
+    globals()[sys.argv[1]]()
