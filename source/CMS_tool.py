@@ -902,6 +902,8 @@ def hsvSegmentationProcess(inputImage,profile,imageFolder,processingFolder,segme
     createShapeFiles(shapeFileFolder,segmentsFolder)
 
 def processImage(imageDirectory,imageFileNameWithExtension,includeUserInput=False,cropSize=None):
+    # reset counter used for saving processing step images
+    saveProcessingStep.counter = 0
 
     print("\nReading File: ",imageFileNameWithExtension)
     imageFileNameNoExtension = os.path.splitext(imageFileNameWithExtension)[0]
@@ -1064,9 +1066,6 @@ def run():
 
     # process each image in sequence
     for x in range(imageStartIndex,imageFinishIndex):
-
-        # reset counter used for saving processing step images
-        saveProcessingStep.counter = 0
 
         # get image name and print
         imageFileNameWithExtension = imageList[x]
