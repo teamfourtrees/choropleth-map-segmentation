@@ -1,3 +1,15 @@
+"""This script reads the following image files from the 'legend' folder:
+    'mature timber.png'
+    'immature timber.png'
+    'not restocked.png'
+    'non-commercial stands.png'
+    'non-forested land.png'
+    'water.png'
+    'boundary.png'
+and prints their RGB and HSV values to a file 'legend/legendColours.txt' for
+ease of reference by an end-user.
+"""
+
 import numpy as np
 import cv2
 import os
