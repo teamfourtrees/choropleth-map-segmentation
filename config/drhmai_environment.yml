@@ -2,10 +2,12 @@ name: drhmai
 channels:
   - defaults
 dependencies:
+  - fiona
+  - geopandas
   - matplotlib=3.2.2
   - numpy=1.19.1
   - opencv
+  - pandas=1.1.0
   - pillow=7.2.0
   - rasterio
   - scipy=1.5.0
-  - fiona

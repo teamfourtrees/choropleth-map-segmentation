@@ -1,19 +1,22 @@
-# choropleth-map-segmentation
-### Source code for a command-line utility that performs image segmentation and file conversion on scanned geoTIFF choropleth maps.  Developed for the Pacific Forestry Centre as part of the Camosun College ICS Capstone Project, May-August 2020.
+# Choropleth Map Segmentation Tool
 
-### Installation Instructions:
+### This project contains source code for a command-line tool that performs image segmentation and file conversion on scanned geoTIFF choropleth maps.  
+#### Developed for the NFIS team at the Pacific Forestry Centre (Natural Resources Canada) as part of a Camosun College ICS Capstone Project, May-August 2020.
 
-1. First, install Anaconda and Python 3 (included with Anaconda) if this is not already present on your machine. Instructions for this are available from anaconda.org
+Please review the enclosed user guide (CMS_Tool_User_Guide.pdf) for instructions on installing and using the Choropleth Map Segmentation Tool.
 
-2. Next, create a new Anaconda (conda) environment. Using the command-line interface, enter the command:
-`conda create -n mapEnv opencv pillow numpy matplotlib scipy rasterio fiona`
-  - Note: <mapEnv> is an example, and can be replaced with the environment name of your choice.
+#### All files relating to the CMS Tool are stored in the choropleth-map-segmentation folder, which contains the following items:
 
-3. Clone this git repository into a directory on your machine where you have access permissions to run commands.
+FILES:
+- `CMS_Tool_User_Guide.pdf` – Contains step-by-step instructions for installing and using the CMS Tool.
+- `README.md` – Contains a brief overview of this project.
 
-4. Collect the geoTIFF choropleth maps for processing.
-  - If using command line only, the command `wget` will work on unix-based systems to retrieve data from a given URL.
+SUBFOLDERS:
+- `config` – Contains configuration details for installing the anaconda environment and for styling shapefiles.
+- `input` – Stores geoTIFF images placed by the user for processing.
+- `legend` – Contains images from the original map legend used for analysis of pixel categories (see the legend_colours.py script for details).
+- `output` – Stores output for each image processed by the CMS Tool. Subfolders within each image folder store the output files based on format.
+- `source` – Contains source code for the CMS Tool (CMS_tool.py) and a script to analyze map legend pixels (legend_colours.py).
 
-5. Copy the geoTIFFs to the 'input' folder
 
-TODO: Finalize procedure
+##### Please raise an issue if you have questions or encounter problems with the tool. Thanks!
