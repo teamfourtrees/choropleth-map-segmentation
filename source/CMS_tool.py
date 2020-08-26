@@ -54,7 +54,7 @@ notRestockedRGB         = np.array([237, 202,  23], dtype='uint8')
 boundaryRGB             = np.array([ 77,  70,  61], dtype='uint8')
 
 # the colours below have not been extracted from the legend but are instead
-# extracted from actual map regions are more aesthetically pleasing
+# extracted from actual map regions and are more aesthetically pleasing
 nonCommercialStandsRGB  = np.array([ 64, 138, 177], dtype='uint8')
 nonForestedLandRGB      = np.array([239, 231, 218], dtype='uint8')
 waterRGB                = np.array([194, 211, 205], dtype='uint8')
